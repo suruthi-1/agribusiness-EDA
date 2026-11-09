@@ -16,22 +16,7 @@ The project demonstrates how data analysis techniques can transform agricultural
 - Create meaningful visualizations for data interpretation.
 - Develop a structured and reproducible EDA workflow using R Markdown.
 
-## 📁 Repository Structure
 
-Agribusiness-EDA/
-│
-├── README.md
-├── eda.Rmd
-├── agri_production.csv
-├── agri_prices.csv
-├── EDA_Report_Design_Final.docx
-│
-└── images/
-    └── grab/
-        ├── dataframe.png
-        ├── environmentpane.png
-        └── rconsole.png
-        
 ## 📂 Files Included
 
 | File Name | Description |
