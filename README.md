@@ -42,7 +42,7 @@ Agribusiness-EDA/
 | `agri_prices.csv` | Dataset containing agricultural market price-related information. |
 | `EDA_Report.docx` | Detailed project documentation describing the EDA methodology, business questions, analysis techniques, visualization plan, and expected outcomes. |
 | `README.md` | Project overview, instructions, tools, methodology, limitations, and conclusion. |
-| `images/screenshots/` | Contains screenshots of project execution and analysis in RStudio. |
+| `images/grab/` | Contains screenshots of project execution and analysis in RStudio. |
 
 ## 📊 Datasets
 
