@@ -18,21 +18,20 @@ The project demonstrates how data analysis techniques can transform agricultural
 
 ## 📁 Repository Structure
 
-```text
 Agribusiness-EDA/
 │
 ├── README.md
 ├── eda.Rmd
-│
 ├── agri_production.csv
 ├── agri_prices.csv
-│
 ├── EDA_Report_Design_Final.docx
 │
 └── images/
-    └── screenshots/
-```
-
+    └── grab/
+        ├── dataframe.png
+        ├── environmentpane.png
+        └── rconsole.png
+        
 ## 📂 Files Included
 
 | File Name | Description |
