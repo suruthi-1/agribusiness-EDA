@@ -40,7 +40,7 @@ Agribusiness-EDA/
 | `eda.Rmd` | R Markdown source file containing the analysis code and workflow. |
 | `agri_production.csv` | Dataset containing agricultural production-related information. |
 | `agri_prices.csv` | Dataset containing agricultural market price-related information. |
-| `EDA_Report_Design_Final.docx` | Detailed project documentation describing the EDA methodology, business questions, analysis techniques, visualization plan, and expected outcomes. |
+| `EDA_Report.docx` | Detailed project documentation describing the EDA methodology, business questions, analysis techniques, visualization plan, and expected outcomes. |
 | `README.md` | Project overview, instructions, tools, methodology, limitations, and conclusion. |
 | `images/screenshots/` | Contains screenshots of project execution and analysis in RStudio. |
 
@@ -137,11 +137,8 @@ Overall, this project strengthens practical knowledge of R programming, data man
 
 ## 📑 Project Documentation
 
-The detailed Word report, `EDA_Report_Design_Final.docx`, provides the project blueprint, methodology, business questions, analysis plan, visualization techniques, worked examples, and expected outcomes.
+The detailed Word report, `EDA_Report.docx`, provides the project blueprint, methodology, business questions, analysis plan, visualization techniques, worked examples, and expected outcomes.
 
-## 👩‍💻 Author
-
-**Suruthi D**
 
 ## ⭐ Acknowledgement
 
