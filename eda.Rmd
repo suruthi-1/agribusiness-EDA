@@ -1,0 +1,749 @@
+---
+title: "Exploratory Data Analysis (EDA) Report Design for Agribusiness Trends"
+subtitle: "A report blueprint for a hypothetical agribusiness dataset, implemented in R / RStudio"
+author: "Suruthi D"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  word_document:
+    toc: true
+    number_sections: true
+    fig_width: 6.5
+    fig_height: 4
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Introduction
+
+Agribusiness decisions depend on patterns hidden in production, weather, input-cost and market data: what to plant, when to sell, where to build storage, and how to price. Exploratory Data Analysis (EDA) is the stage where those patterns are found and checked before any forecast, model or policy decision is made.
+
+This document is a complete **blueprint** for an EDA report on agribusiness trends. It is written for **R and RStudio**, and every analysis is paired with the R code that implements it. It covers:
+
+- the business questions and the variables and metrics relevant to agribusiness;
+- the types of analyses to perform and the visualization techniques suited to each;
+- how statistical anomalies and feature correlations are handled, with worked examples;
+- a workflow diagram, and a reproducible R example on simulated data;
+- the structure of the final EDA report (executive summary, methodology, analysis, recommendations);
+- the expected outcomes of the EDA process.
+
+## Coverage of the assignment objectives
+
+| # | Assignment requirement | Where covered |
+|:--|:---------------------------------------------|:---------------------------|
+| 1 | Complete outline of an EDA report on agribusiness trends | Sections on the report structure and workflow |
+| 2 | Turn raw data into actionable insights | EDA steps, worked example, recommendations |
+| 3 | Elaborate on types of analyses, visualization techniques, expected outcomes | Types of analyses, visualization plan, expected outcomes |
+| 4 | List and describe variables and metrics | Variables and metrics |
+| 5 | Plan visualizations for different datasets and insights | Visualization plan, worked charts |
+| 6 | Draft report sections (executive summary, methodology, analysis, recommendations) | Proposed structure of the final report |
+| 7 | Clarify handling of anomalies and feature correlations | Anomaly handling, correlation analysis |
+
+# The Hypothetical Dataset
+
+The blueprint assumes a district-level panel of **state x crop x month**, assembled from production statistics, market (mandi) price boards, weather services and input-cost indices.
+
+| Dataset | Typical fields | Granularity |
+|:-----------------|:-----------------------------------------|:--------------------------|
+| Crop production | Area sown, production, yield, crop, season (Kharif / Rabi / Zaid) | District, annual |
+| Market prices | Modal price (INR/quintal), min and max price, arrivals, market | Mandi, daily (aggregated monthly) |
+| Weather | Rainfall, temperature, rainfall deviation from normal | District, monthly |
+| Input costs | Fertilizer index, diesel price, wages | State, monthly |
+| Policy and trade | MSP, export bans, subsidy flags | National or state, event-based |
+
+## Packages and setup
+
+```{r}
+library(tidyverse)    # dplyr, ggplot2, tidyr, ...
+library(lubridate)    # dates
+
+set.seed(2026)        # fixed seed so the simulated data is reproducible
+```
+
+(Install once with `install.packages("tidyverse")`.)
+
+# Business Questions
+
+1. Which regions and crops lead production, and how is yield per hectare changing over time?
+2. How strong and predictable are the seasonal cycles in arrivals and prices?
+3. How do rainfall, input costs and policy relate to yield and price?
+4. Where is price volatility highest, and which observations are anomalies?
+5. Which findings are reliable enough to act on, and which need predictive modelling?
+
+# Variables and Metrics Relevant to Agribusiness
+
+## Core variables
+
+| Category | Variables | Why it matters |
+|:------------------|:--------------------------------|:-------------------------------|
+| Regional production | State, district, area sown, production, yield | Identifies production hubs and productivity gaps |
+| Seasonal and temporal | Date, month, crop season, marketing year | Reveals planting, harvest and price cycles |
+| Market prices | Modal price, min-max spread, arrivals | Shows price formation and volatility |
+| Weather | Rainfall, temperature, dry-spell length | Main driver of yield and supply shocks |
+| Input economics | Fertilizer index, diesel, wages, cost of cultivation | Drives farmer margins |
+| Policy and external | MSP, export ban dummies, subsidy flags | Explains structural breaks |
+
+## Derived metrics and KPIs
+
+| Metric | Formula | R implementation | Purpose |
+|:------------------|:-----------------------------|:---------------------------|:------------------|
+| Yield | Production / Area | `production / area_ha` | Productivity |
+| CAGR | (End / Start)^(1/years) - 1 | `(last / first)^(1/n) - 1` | Growth trend |
+| Seasonal index | Month average / overall average x 100 | `100 * avg / mean(avg)` | Seasonality |
+| Coefficient of variation | SD / mean | `sd(x) / mean(x)` | Volatility and risk |
+| Price spread | Max price - min price | `max - min` | Market efficiency |
+| Gross margin per ha | Yield x price - cost | `yield * price - cost` | Profitability |
+| Production share | Region output / total | `x / sum(x)` | Supply concentration |
+| Price-to-MSP ratio | Modal price / MSP | `price / msp` | Policy pressure |
+
+A small worked example of three of these metrics (hypothetical numbers):
+
+```{r}
+tibble(production_t = c(1200, 1500), area_ha = c(300, 320)) %>%
+  mutate(yield_t_ha = round(production_t / area_ha, 2))
+
+first <- 1000; last <- 1500; n_years <- 5
+round((last / first)^(1 / n_years) - 1, 4)        # CAGR = 8.45 percent per year
+
+x <- c(1800, 2100, 2500, 1900)
+round(sd(x) / mean(x), 3)                         # coefficient of variation
+```
+
+# Types of Analyses Planned
+
+| Analysis type | Techniques | Example question |
+|:---------------------|:----------------------------------------|:-------------------------------|
+| Descriptive (univariate) | Mean, median, SD, quartiles, skewness | What is a typical price and how variable is it? |
+| Regional (cross-sectional) | Ranking, production share, yield gap, ANOVA | Which states lag in yield for the same crop? |
+| Temporal and seasonal | Rolling average, CAGR, STL decomposition, seasonal index | When do prices peak each year? |
+| Market and price | Volatility (CV), arrival-price link, price vs MSP | How much do supply surges depress price? |
+| Relationship analysis | Correlation, lagged correlation, clustering | Does rainfall relate to yield? |
+| Anomaly analysis | IQR, z-score, MAD, residual checks | Which records are errors, and which are real shocks? |
+
+# EDA Methodology: Workflow from Raw Data to Insight
+
+| Step | Goal | R tools | Decision rule |
+|:-----|:-----------------------|:--------------------------|:--------------------------------|
+| 1 | Profile the data | `glimpse()`, `summary()`, `colSums(is.na())` | Record the baseline row and column counts |
+| 2 | Clean and standardise | `mutate()`, `recode()`, `parse_number()` | One unit and one label per concept |
+| 3 | Integrate sources | `left_join()` | Check for unmatched keys after every join |
+| 4 | Univariate analysis | `summarise()`, `geom_histogram()` | Check shape, skew, spread |
+| 5 | Regional analysis | `group_by()`, `geom_col()` | Rank and compare states and crops |
+| 6 | Temporal and seasonal analysis | `stl()`, `geom_line()` | Separate trend, season and noise |
+| 7 | Relationship analysis | `cor()`, `geom_point()`, `lm()` | Treat results as associations |
+| 8 | Anomaly review | IQR, z-score, MAD | Flag first, decide with domain knowledge |
+| 9 | Synthesise insights | Tables, charts, text | Each finding needs evidence and an action |
+| 10 | Report and reproduce | R Markdown, `renv`, `set.seed()` | Anyone can rerun and get the same result |
+
+# Simulating the Dataset
+
+The simulated data has 5 states, 3 crops and 10 years (2015 to 2024). It deliberately contains problems found in real data (unit errors, missing values and a genuine price shock), so the cleaning and anomaly steps have something to find.
+
+```{r}
+states <- c("Tamil Nadu", "Punjab", "Maharashtra", "Uttar Pradesh", "Karnataka")
+crops  <- c("Rice", "Wheat", "Onion")
+
+# Weather is generated once per state and month (all crops in a state share the same weather)
+dates <- seq(as.Date("2015-01-01"), by = "month", length.out = 120)
+
+weather <- expand_grid(state = states, date = dates) %>%
+  mutate(
+    month = as.integer(format(date, "%m")),
+    rainfall_mm = pmax(0, 100 + 90 * sin((month - 3) / 12 * 2 * pi) + rnorm(n(), 0, 35)),
+    temp_c      = 27 + 5 * sin((month - 4) / 12 * 2 * pi) + rnorm(n(), 0, 1)
+  ) %>%
+  select(state, date, rainfall_mm, temp_c)
+
+# Fertilizer cost index is national, so it is also generated once per month
+fert <- tibble(date = dates) %>%
+  mutate(t = (as.integer(format(date, "%Y")) - 2015) + as.integer(format(date, "%m")) / 12,
+         fert_index = 100 * 1.05^t * exp(rnorm(n(), 0, 0.03))) %>%
+  select(date, fert_index)
+
+agri_raw <- expand_grid(state = states, crop = crops, date = dates) %>%
+  left_join(weather, by = c("state", "date")) %>%
+  left_join(fert, by = "date") %>%
+  mutate(
+    year  = as.integer(format(date, "%Y")),
+    month = as.integer(format(date, "%m")),
+    t     = (year - 2015) + month / 12,
+    peak  = case_when(crop == "Rice" ~ 11, crop == "Wheat" ~ 4, TRUE ~ 3),
+    scale = case_when(state == "Punjab" ~ 1.6, state == "Uttar Pradesh" ~ 1.4,
+                      state == "Maharashtra" ~ 1.1, state == "Tamil Nadu" ~ 0.8, TRUE ~ 0.7),
+    arrivals_t = scale * 500 * (1 + 0.6 * cos((month - peak) / 12 * 2 * pi)) * exp(rnorm(n(), 0, 0.15)),
+    base  = case_when(crop == "Rice" ~ 2000, crop == "Wheat" ~ 2100, TRUE ~ 1500),
+    vol   = ifelse(crop == "Onion", 0.18, 0.06),
+    price_inr_qtl = base * 1.05^t * (arrivals_t / (scale * 500))^-0.35 * exp(rnorm(n(), 0, vol))
+  ) %>%
+  select(state, crop, date, year, month, rainfall_mm, temp_c, fert_index, arrivals_t, price_inr_qtl)
+
+# Annual production table
+rain_year <- weather %>%
+  mutate(year = as.integer(format(date, "%Y"))) %>%
+  group_by(state, year) %>%
+  summarise(rain_year = sum(rainfall_mm), .groups = "drop")
+
+production <- expand_grid(state = states, crop = crops, year = 2015:2024) %>%
+  left_join(rain_year, by = c("state", "year")) %>%
+  mutate(
+    area_ha = round(case_when(state == "Punjab" ~ 300000, state == "Uttar Pradesh" ~ 350000,
+                              state == "Maharashtra" ~ 220000, state == "Tamil Nadu" ~ 150000,
+                              TRUE ~ 120000) * runif(n(), 0.85, 1.15)),
+    base_yield = case_when(crop == "Rice" ~ 2.8, crop == "Wheat" ~ 3.1, TRUE ~ 16),
+    yield_tha  = base_yield * (1 + 0.015 * (year - 2015)) *
+                 (1 + 0.0004 * (rain_year - mean(rain_year))) * exp(rnorm(n(), 0, 0.05)),
+    production_t = area_ha * yield_tha
+  ) %>%
+  select(-base_yield)
+
+# Inject typical problems
+N <- nrow(agri_raw)
+bad <- sample(N, 12)
+agri_raw$price_inr_qtl[bad] <- agri_raw$price_inr_qtl[bad] * 100                      # unit errors
+agri_raw$price_inr_qtl[sample(setdiff(1:N, bad), 25)] <- NA                           # missing prices
+agri_raw$arrivals_t[sample(1:N, 40)] <- NA                                            # missing arrivals
+spike <- agri_raw$crop == "Onion" & agri_raw$state == "Maharashtra" &
+         agri_raw$year == 2019 & agri_raw$month %in% 9:11
+agri_raw$price_inr_qtl[spike] <- agri_raw$price_inr_qtl[spike] * 2.2                  # genuine flood shock
+```
+
+## Data dictionary
+
+| Variable | Meaning | Unit |
+|:-------------------|:-------------------------------|:--------------|
+| state, crop | Region and commodity | - |
+| date, year, month | Time keys | - |
+| rainfall_mm, temp_c | Monthly rainfall and mean temperature | mm, degrees C |
+| fert_index | Fertilizer cost index | index |
+| arrivals_t | Market arrivals | tonnes |
+| price_inr_qtl | Modal market price | INR per quintal |
+| area_ha, yield_tha, production_t | Area, yield, production | ha, t/ha, tonnes |
+| rain_year | Annual rainfall of the state (sum of its 12 monthly values) | mm |
+
+# Step 1: Profile and Clean the Data
+
+```{r}
+dim(agri_raw)
+glimpse(agri_raw)
+colSums(is.na(agri_raw))                       # missing values per column
+summary(agri_raw$price_inr_qtl)                # the maximum is far too high: unit errors
+```
+
+Cleaning follows two rules: unit errors are corrected (a price more than 20 times the crop median is almost certainly in the wrong unit), and gaps are filled with the median of the same state, crop and calendar month.
+
+```{r}
+agri <- agri_raw %>%
+  group_by(crop) %>%
+  mutate(unit_error = !is.na(price_inr_qtl) & price_inr_qtl > 20 * median(price_inr_qtl, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(price_inr_qtl = ifelse(unit_error, price_inr_qtl / 100, price_inr_qtl)) %>%
+  group_by(state, crop, month) %>%
+  mutate(price_inr_qtl = ifelse(is.na(price_inr_qtl), median(price_inr_qtl, na.rm = TRUE), price_inr_qtl),
+         arrivals_t    = ifelse(is.na(arrivals_t),    median(arrivals_t,    na.rm = TRUE), arrivals_t)) %>%
+  ungroup()
+
+c(unit_errors_fixed = sum(agri$unit_error), missing_left = sum(is.na(agri$price_inr_qtl)))
+```
+
+| Cleaning action | Rule | Result in this dataset |
+|:-----------------------|:-----------------------------|:----------------------|
+| Correct unit errors | Price above 20 x crop median is divided by 100 | 12 prices corrected |
+| Fill missing prices | Median of same state, crop, month | 25 gaps filled |
+| Fill missing arrivals | Median of same state, crop, month | 40 gaps filled |
+| Keep genuine shocks | Not removed; flagged in the anomaly step | 2019 onion spike kept |
+
+# Step 2: Univariate Analysis
+
+```{r}
+agri %>%
+  group_by(crop) %>%
+  summarise(mean = mean(price_inr_qtl), median = median(price_inr_qtl),
+            sd = sd(price_inr_qtl), cv = sd / mean,
+            min = min(price_inr_qtl), max = max(price_inr_qtl)) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)))
+```
+
+```{r}
+ggplot(agri, aes(price_inr_qtl)) +
+  geom_histogram(bins = 40, fill = "darkgreen", colour = "white") +
+  facet_wrap(~ crop, scales = "free") +
+  labs(title = "Price distribution by crop", x = "Price (INR/quintal)", y = "Count") +
+  theme_minimal()
+```
+
+**Reading the chart:** onion prices are right-skewed with a long upper tail (price spikes). Rice and wheat are tighter. Right-skewed variables are candidates for a log transform before modelling.
+
+# Step 3: Regional Analysis
+
+```{r}
+regional <- production %>%
+  group_by(state) %>%
+  summarise(production_t = sum(production_t), .groups = "drop") %>%
+  mutate(share_pct = round(100 * production_t / sum(production_t), 1)) %>%
+  arrange(desc(production_t))
+regional
+
+ggplot(regional, aes(reorder(state, production_t), production_t / 1e6)) +
+  geom_col(fill = "darkgreen") + coord_flip() +
+  labs(title = "Total production 2015-2024 by state", x = NULL, y = "Million tonnes") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(production, aes(state, yield_tha, fill = state)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ crop, scales = "free_y") +
+  labs(title = "Yield by state and crop", x = NULL, y = "Yield (t/ha)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+**Decision use:** the bar chart ranks supply concentration; the box plots show yield gaps between states for the same crop, which is the starting point for extension and irrigation planning.
+
+# Step 4: Seasonal and Time-Series Analysis
+
+## Seasonal index
+
+The seasonal index is the average price of a calendar month divided by the overall average, times 100. A value of 120 means prices in that month run 20 percent above the annual average.
+
+```{r}
+seasonal <- agri %>%
+  group_by(crop, month) %>%
+  summarise(avg = mean(price_inr_qtl), .groups = "drop") %>%
+  group_by(crop) %>%
+  mutate(seasonal_index = 100 * avg / mean(avg)) %>%
+  ungroup()
+
+ggplot(seasonal, aes(month, seasonal_index, colour = crop)) +
+  geom_hline(yintercept = 100, linetype = "dashed") +
+  geom_line(linewidth = 1) + geom_point() +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  labs(title = "Seasonal price index (100 = annual average)", x = NULL, y = "Index", colour = "Crop") +
+  theme_minimal()
+```
+
+## Trend, season and noise (STL decomposition)
+
+```{r}
+onion <- agri %>% filter(crop == "Onion") %>%
+  group_by(date) %>% summarise(price = mean(price_inr_qtl), .groups = "drop")
+
+onion_ts <- ts(onion$price, start = c(2015, 1), frequency = 12)
+plot(stl(onion_ts, s.window = "periodic"), main = "STL decomposition of average onion price")
+```
+
+The decomposition separates a long-run **trend**, a repeating **seasonal** pattern, and a **remainder**. Large values in the remainder point to shocks that seasonality and trend cannot explain, which links this step to the anomaly review.
+
+## Heatmap of month by year
+
+```{r}
+agri %>%
+  filter(crop == "Onion") %>%
+  group_by(year, month) %>%
+  summarise(price = mean(price_inr_qtl), .groups = "drop") %>%
+  ggplot(aes(factor(month, labels = month.abb), factor(year), fill = price)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = "Onion price by month and year", x = NULL, y = NULL, fill = "INR/qtl") +
+  theme_minimal()
+```
+
+## Price volatility
+
+```{r}
+agri %>%
+  group_by(crop, year) %>%
+  summarise(cv = sd(price_inr_qtl) / mean(price_inr_qtl), .groups = "drop") %>%
+  ggplot(aes(year, cv, colour = crop)) +
+  geom_line(linewidth = 1) + geom_point() +
+  labs(title = "Price volatility (coefficient of variation) by year", x = NULL, y = "CV") +
+  theme_minimal()
+```
+
+# Step 5: Price and Arrivals (Market Analysis)
+
+```{r}
+ggplot(agri, aes(arrivals_t, price_inr_qtl)) +
+  geom_point(alpha = 0.3, colour = "darkgreen") +
+  geom_smooth(method = "lm", se = FALSE, colour = "red") +
+  facet_wrap(~ crop, scales = "free") +
+  scale_x_log10() + scale_y_log10() +
+  labs(title = "Higher arrivals, lower prices (log-log)",
+       x = "Arrivals (tonnes, log scale)", y = "Price (INR/quintal, log scale)") +
+  theme_minimal()
+```
+
+On a log-log scale the slope of the line is an **elasticity**: the percent change in price for a one percent change in arrivals. A negative slope confirms that supply surges depress prices.
+
+# Visualization Plan
+
+| Chart type | Variables | Insight delivered | Stage |
+|:--------------------|:-----------------------|:----------------------------|:------------|
+| Histogram / density | Yield, price, arrivals | Shape, skew, spread | Univariate |
+| Box / violin plot | Yield or price by state or crop | Median, dispersion, outliers | Group comparison |
+| Sorted bar chart | Production by state | Ranking and share | Regional |
+| Stacked bar chart | Crop mix by region | Composition | Regional |
+| Line chart | Monthly price over years | Trend, seasonality, shocks | Temporal |
+| Heatmap (month x year) | Price | Recurring peaks and troughs | Temporal |
+| Scatter plot with trend line | Yield vs rainfall; price vs arrivals | Direction and strength | Bivariate |
+| Pair plot | Yield, rainfall, temperature, cost | Multi-variable screening | Multivariate |
+| Correlation heatmap | All numeric variables | Correlated clusters | Multivariate |
+| Choropleth map | Yield by district | Spatial hotspots | Regional |
+| Decomposition plot | Price series | Trend, season, remainder | Temporal |
+| Control chart | Price with +/- 2 SD band | Abnormal volatility | Anomaly |
+
+Design rules: label every axis with units, keep one colour per crop across all charts, write the title as the takeaway, and avoid 3D effects.
+
+# Handling Statistical Anomalies
+
+An extreme value is either a **data error** (a unit mistake) or a **genuine event** (a flood or an export ban). The principle is: **flag first, investigate, then decide, and document every decision.**
+
+## Worked example: why robust rules are needed
+
+```{r}
+x <- c(4.1, 4.5, 3.9, 4.8, 5.0, 4.3, 450, 4.6, 1.9)       # yields in t/ha; 450 is an error
+
+z      <- (x - mean(x)) / sd(x)                            # classic z-score
+mod_z  <- 0.6745 * (x - median(x)) / mad(x, constant = 1)  # modified z-score (median and MAD)
+q      <- quantile(x, c(0.25, 0.75)); iqr <- q[2] - q[1]
+
+tibble(yield = x,
+       z_score      = round(z, 2),
+       modified_z   = round(mod_z, 1),
+       flag_z       = abs(z) > 3,
+       flag_modz    = abs(mod_z) > 3.5,
+       flag_iqr     = x < q[1] - 3 * iqr | x > q[2] + 3 * iqr)
+```
+
+The huge value of 450 inflates both the mean and the standard deviation, so its own z-score stays below 3 (with 9 values a z-score cannot exceed 2.67). This is called **masking**. The median, MAD and IQR are barely affected, so the robust rules flag the error correctly. They also flag 1.9 t/ha, a low but possible yield (for example in a drought year). A flag is therefore a prompt for review, not an automatic deletion: the 450 is set to missing because it is impossible for rice, while the 1.9 is kept if rainfall or other fields explain it.
+
+| Method | Best for | Weakness |
+|:--------------------|:-----------------------------|:-------------------------------|
+| z-score (above 3) | Roughly normal data, large samples | Masked by the outliers themselves |
+| Modified z-score (above 3.5) | Skewed data, small samples | Needs enough variation in the data |
+| IQR rule (1.5 or 3 x IQR) | General purpose, skewed data | Should be applied within groups |
+| Residuals from STL | Time series with seasonality | Needs a fitted decomposition |
+| Isolation Forest, Mahalanobis | Odd combinations of variables | Harder to explain to stakeholders |
+| Domain rules | Impossible values (negative price) | Needs expert input |
+
+## Classification and treatment
+
+| Type | Example | Treatment |
+|:----------------------|:------------------------------|:-----------------------------------|
+| Data entry or unit error | Price in INR/kg instead of INR/quintal | Correct from source; otherwise set to `NA` |
+| Missing or placeholder value | 0 or 9999 for unreported | Convert to `NA`; impute by seasonal median |
+| Genuine extreme event | Price spike after floods | Retain; add an event flag; report with and without |
+| Structural break | Export ban, policy change | Retain; model periods separately or add a dummy |
+| Isolated unexplained outlier | One market far from its neighbours | Winsorise or exclude, with a sensitivity check |
+
+## Applying the method to the dataset
+
+Anomalies are detected on the seasonally adjusted price (price divided by the median for the same state, crop and month), so ordinary seasonal peaks are not flagged.
+
+```{r}
+anom <- agri %>%
+  group_by(state, crop, month) %>%
+  mutate(adj = price_inr_qtl / median(price_inr_qtl)) %>%
+  group_by(state, crop) %>%
+  mutate(q1 = quantile(adj, 0.25), q3 = quantile(adj, 0.75), iqr = q3 - q1,
+         anomaly = adj > q3 + 1.5 * iqr | adj < q1 - 1.5 * iqr) %>%
+  ungroup()
+
+anom %>% count(crop, anomaly)
+
+anom %>% filter(anomaly) %>% arrange(desc(adj)) %>%
+  select(state, crop, date, price_inr_qtl, adj) %>% head(10)
+```
+
+```{r}
+anom %>%
+  filter(crop == "Onion", state == "Maharashtra") %>%
+  ggplot(aes(date, price_inr_qtl)) +
+  geom_line(colour = "grey40") +
+  geom_point(data = function(d) filter(d, anomaly), colour = "red", size = 2) +
+  labs(title = "Onion prices in Maharashtra: flagged anomalies in red",
+       subtitle = "The 2019 cluster is a genuine flood shock, so it is retained and labelled",
+       x = NULL, y = "INR/quintal") +
+  theme_minimal()
+```
+
+## Sensitivity analysis
+
+Key statistics are recomputed with and without the flagged points. If conclusions change materially, the report must say so.
+
+```{r}
+bind_rows(
+  with_anomalies    = anom %>% filter(crop == "Onion", state == "Maharashtra") %>%
+                      summarise(mean_price = mean(price_inr_qtl), sd_price = sd(price_inr_qtl)),
+  without_anomalies = anom %>% filter(crop == "Onion", state == "Maharashtra", !anomaly) %>%
+                      summarise(mean_price = mean(price_inr_qtl), sd_price = sd(price_inr_qtl)),
+  .id = "scenario"
+) %>% mutate(across(where(is.numeric), ~ round(., 1)))
+```
+
+Compare the two rows: the flagged points (mainly the 2019 flood shock) raise both the mean and the standard deviation, so they explain much of the volatility. This is why the report states results with and without genuine events instead of silently deleting them.
+
+# Handling Feature Correlations
+
+## Pearson and Spearman
+
+Pearson measures **linear** association and is sensitive to outliers. Spearman uses ranks, so it measures **monotonic** association and is robust to outliers and skew.
+
+```{r}
+set.seed(1)
+a <- rnorm(30)
+b <- a + rnorm(30, 0, 0.5)
+b[30] <- 25                                        # one extreme value
+c(pearson = round(cor(a, b), 2), spearman = round(cor(a, b, method = "spearman"), 2))
+```
+
+## Correlation heatmap and multicollinearity (VIF)
+
+```{r}
+cd <- agri %>% filter(crop == "Rice") %>%
+  select(price_inr_qtl, arrivals_t, rainfall_mm, temp_c, fert_index)
+
+cm <- cor(cd, method = "spearman")
+round(cm, 2)
+
+as.data.frame(as.table(cm)) %>%
+  ggplot(aes(Var1, Var2, fill = Freq)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = round(Freq, 2)), size = 3) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "darkgreen", limits = c(-1, 1)) +
+  labs(title = "Spearman correlation (Rice)", x = NULL, y = NULL, fill = "rho") +
+  theme_minimal()
+```
+
+```{r}
+# Variance Inflation Factor in base R: VIF = 1 / (1 - R-squared of one predictor on the others)
+vars <- c("arrivals_t", "rainfall_mm", "temp_c", "fert_index")
+vif <- sapply(vars, function(v) {
+  r2 <- summary(lm(reformulate(setdiff(vars, v), response = v), data = cd))$r.squared
+  round(1 / (1 - r2), 2)
+})
+vif
+```
+
+A VIF above 5 to 10 means a variable is largely explained by the others. The remedies are to drop one of a redundant pair, combine them into an index, or use PCA.
+
+## Two traps: spurious trends and Simpson's paradox
+
+**Trap 1: two trending series correlate even if unrelated.** Fertilizer cost and prices both rise with inflation, so their levels correlate strongly. Correlate the *changes* instead.
+
+```{r}
+set.seed(1)
+tt <- 1:60
+a <- 100 * 1.05^(tt / 12) * exp(rnorm(60, 0, 0.02))
+b <- 50  * 1.04^(tt / 12) * exp(rnorm(60, 0, 0.02))
+c(levels = round(cor(a, b), 2),
+  changes = round(cor(diff(log(a)), diff(log(b))), 2))
+```
+
+The correlation of levels is high only because both series trend upward; the correlation of changes is close to zero.
+
+**Trap 2: Simpson's paradox.** A relationship across all data can reverse within each group.
+
+```{r}
+set.seed(2)
+sim <- tibble(group = rep(c("A", "B"), each = 20),
+              x = c(rnorm(20, 2, 0.5), rnorm(20, 6, 0.5))) %>%
+  mutate(y = ifelse(group == "A", 10, 20) - x + rnorm(40, 0, 0.5))
+
+cor(sim$x, sim$y)                                   # pooled: positive
+sim %>% group_by(group) %>% summarise(r = round(cor(x, y), 2))   # within groups: negative
+```
+
+| Risk | Safeguard |
+|:-------------------------|:---------------------------------------------------------|
+| Correlation is not causation | Word findings as associations; name confounders (season, region, inflation) |
+| Spurious trend correlation | Use differenced, detrended or inflation-adjusted data |
+| Simpson's paradox | Check relationships within regions and crops |
+| Many tests, false positives | Multiple-testing correction; report effect sizes and intervals |
+
+## Rainfall and yield
+
+```{r}
+ggplot(production, aes(rain_year, yield_tha)) +
+  geom_point(alpha = 0.5, colour = "darkgreen") +
+  geom_smooth(method = "lm", colour = "red") +
+  facet_wrap(~ crop, scales = "free_y") +
+  labs(title = "Yield and annual rainfall", x = "Annual rainfall (mm)", y = "Yield (t/ha)") +
+  theme_minimal()
+
+production %>% group_by(crop) %>%
+  summarise(spearman_rho = round(cor(rain_year, yield_tha, method = "spearman"), 2))
+```
+
+# Workflow Diagram
+
+The green boxes are **data preparation** and the blue boxes are **analysis and reporting**.
+
+```{r workflow-diagram, echo=FALSE, fig.height=8, fig.width=6.5, fig.cap="Figure 1: Proposed EDA workflow"}
+steps <- c(
+  "1. Define business questions and scope",
+  "2. Collect and integrate data sources",
+  "3. Profile the data (structure, ranges, missingness)",
+  "4. Clean: units, labels, missing values",
+  "5. Univariate analysis (distributions)",
+  "6. Regional analysis (production, yield gaps)",
+  "7. Seasonal and time-series analysis",
+  "8. Market analysis (price, arrivals, volatility)",
+  "9. Anomaly review (flag, investigate, decide)",
+  "10. Correlation and multicollinearity checks",
+  "11. Sensitivity checks on key findings",
+  "12. Synthesise insights and recommendations",
+  "13. Write the report and make it reproducible"
+)
+k <- length(steps)
+par(mar = c(1, 0, 0, 0))
+plot(NULL, xlim = c(0, 10), ylim = c(-0.5, k + 0.9), axes = FALSE, xlab = "", ylab = "")
+for (i in seq_len(k)) {
+  y <- k - i + 1
+  rect(1, y - 0.33, 9, y + 0.33,
+       col = if (i <= 4) "#DCEFD9" else "#D6E4F5",
+       border = if (i <= 4) "#4C8C4A" else "#3B6EA8", lwd = 1.5)
+  text(5, y, steps[i], cex = 0.85)
+  if (i < k) arrows(5, y - 0.33, 5, y - 0.67, length = 0.07)
+}
+legend("bottom", horiz = TRUE, bty = "n", cex = 0.75,
+       fill = c("#DCEFD9", "#D6E4F5"),
+       legend = c("Data preparation", "Analysis and reporting"))
+```
+
+If a sensitivity check (step 11) changes a conclusion, the workflow returns to the anomaly review or cleaning step, so the process is iterative.
+
+# Proposed Structure of the Final EDA Report
+
+| Section | Content | Length |
+|:---------------------------|:-------------------------------------------------|:----------|
+| Title page and contents | Title, author, date, dataset version | 1 page |
+| 1. Executive Summary | Objective, data used, 4 to 6 headline findings with numbers, top recommendations, caveats | 1-2 pages |
+| 2. Introduction and Objectives | Business context, questions, scope, stakeholders | 1 page |
+| 3. Data Description | Sources, coverage, variables and units, data dictionary, limitations | 2 pages |
+| 4. Methodology | Cleaning rules, imputation, anomaly treatment, statistical tests, tools | 2-3 pages |
+| 5. Data Quality Assessment | Missingness, duplicates, outliers, before and after cleaning | 1-2 pages |
+| 6. Exploratory Analysis | Regional production; seasonal trends; prices and volatility; weather and cost relationships | 8-12 pages |
+| 7. Correlation and Anomaly Findings | Correlation matrix, multicollinearity, anomalies and their causes | 2 pages |
+| 8. Key Insights | Synthesis linking findings to business meaning | 1-2 pages |
+| 9. Recommendations | Prioritised actions with owner, impact and confidence | 1-2 pages |
+| 10. Limitations and Next Steps | Data gaps, assumptions, predictive modelling plan | 1 page |
+| Appendices | Code, extra charts, anomaly log, glossary | As needed |
+
+## Executive summary template
+
+Each headline finding follows the pattern **Finding, Evidence, Implication, Action.**
+
+| Finding | Evidence | Implication | Action |
+|:------------------------|:-------------------------|:---------------------------|:-------------------------|
+| Onion prices peak well above the annual mean in the lean season | Seasonal index chart | Selling at harvest loses margin | Expand cold storage and stagger sales |
+| Higher arrivals lead to lower prices | Price vs arrivals chart | Supply surges cause distress selling | Plan procurement with arrival forecasts |
+| Production is concentrated in a few states | Regional bar chart | Supply risk is concentrated | Diversify sourcing and logistics |
+| Yield rises with rainfall, with scatter | Rainfall vs yield chart | Weather explains part of the variation | Promote irrigation in low-yield states |
+
+## How each analysis section is written
+
+1. State the question and why it matters to the business.
+2. Show a chart or table with a takeaway title.
+3. Interpret in plain language, with statistics and caveats.
+4. Link to the next section or to a recommendation.
+
+# Expected Outcomes
+
+| Outcome | Decision it supports |
+|:--------------------------------------|:---------------------------------------------------|
+| Ranked regional production and yield-gap view | Targeting extension, seed and irrigation investment |
+| Monthly seasonal price indices | Best sowing, harvesting, storage and selling windows |
+| Volatility and risk profile by crop | Pricing, hedging, insurance, working capital |
+| Weather-yield and cost-margin relationships | Climate-risk planning and input purchase timing |
+| Anomaly log and data-quality scorecard | Better data collection and trust in later models |
+| Shortlist of strong predictors | Feature selection for price and yield forecasting |
+
+# Industry Terminology
+
+| Term | Meaning |
+|:------------------|:---------------------------------------------------|
+| Mandi / APMC | Regulated agricultural wholesale market |
+| MSP | Minimum Support Price set by government |
+| Kharif / Rabi / Zaid | Monsoon, winter and summer crop seasons |
+| Modal price | The most frequently quoted market price |
+| Arrivals | Quantity of produce brought to a market |
+| Yield gap | Difference between achievable and actual yield |
+| Seasonal index | Ratio of a month's average price to the annual average |
+| Coefficient of variation | Variability relative to the mean |
+| Basis | Local price minus a benchmark market price |
+| Post-harvest loss | Share of produce lost between harvest and sale |
+
+# Tools and Reproducibility
+
+Reproducibility means anyone can rerun the same code on the same data and get the same results. In agribusiness this matters because recurring seasonal data needs the same treatment each year, decisions on loans or contracts may rest on the analysis, and reviewers must be able to see why a value was changed.
+
+| Need | Tool | Use in this project |
+|:----------------------|:--------------------|:------------------------------------------|
+| Working environment | RStudio Project, `here` | One folder, relative paths |
+| Import and cleaning | `readr`, `dplyr`, `tidyr`, `lubridate` | Read, recode, convert units, parse dates |
+| Plots | `ggplot2` | All charts in this report |
+| Time series | `stats::stl()` | Decomposition and seasonal analysis |
+| Reporting | R Markdown | Code, results and explanation in one document |
+| Package versions | `renv` | `renv::snapshot()` writes `renv.lock` |
+| Version control | Git and GitHub | Every change is committed |
+| Randomness | `set.seed()` | Same simulated data on every run |
+
+Suggested project structure:
+
+```text
+agribusiness-eda/
+  agribusiness-eda.Rproj
+  README.md                  <- how to run, data sources
+  renv.lock                  <- exact package versions
+  data/
+    raw/                     <- original files, never edited
+    processed/               <- cleaned data and cleaning log
+  R/
+    cleaning_functions.R     <- reusable functions
+  reports/
+    eda_report.Rmd           <- this report
+  docs/
+    decision_log.md          <- why each rule was chosen
+```
+
+```{r eval=FALSE}
+install.packages("renv")
+renv::init()        # create a project library and renv.lock
+renv::snapshot()    # record package versions
+renv::restore()     # on another machine: install the exact versions
+```
+
+| Reproducibility check | How to verify |
+|:----------------------------|:------------------------------------------------|
+| Raw data unchanged | Keep raw files read-only; record a checksum in the README |
+| No manual edits | Every change is a line of code |
+| Same package versions | `renv::status()` reports no drift |
+| Randomness controlled | `set.seed()` at the top |
+| Decisions documented | Decision log and cleaning log kept with the report |
+
+# Risks and Mitigation
+
+| Risk | Consequence | Mitigation |
+|:-----------------------------|:--------------------------------|:---------------------------------------|
+| Over-aggressive outlier removal | Real shocks such as droughts are erased | Flag first, review, keep plausible extremes |
+| Imputation bias | Variance underestimated | Group-wise imputation; report share imputed |
+| Inconsistent region names or boundaries | Wrong joins and comparisons | Master mapping table; check unmatched keys |
+| Sparse data in small markets | Unstable estimates | Aggregate; state uncertainty |
+| Over-interpreting associations | Wrong decisions | Cautious wording; check confounders; sensitivity analysis |
+| Stale data | Findings go out of date | Scripted, refreshable pipeline |
+
+# Conclusion
+
+This blueprint treats EDA as a structured, ordered process: define the business questions, prepare the data, analyse distributions, regions, seasons and markets, review anomalies with robust methods, check correlations for traps such as spurious trends and Simpson's paradox, and then turn validated findings into recommendations. The worked R examples show that each step can be written as code, checked and repeated. A clear report structure, a documented set of decisions and a reproducible environment mean that the same conclusions can be rebuilt each season and traced back to the raw data.
+
+The data used here are simulated, so the findings illustrate the method; real conclusions require the same workflow on actual production, market and weather data.
+
+```{r}
+sessionInfo()   # record R and package versions used for this report
+```
