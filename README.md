@@ -139,6 +139,11 @@ Overall, this project strengthens practical knowledge of R programming, data man
 
 The detailed Word report, `EDA_Report.docx`, provides the project blueprint, methodology, business questions, analysis plan, visualization techniques, worked examples, and expected outcomes.
 
+## 💻 Grab
+
+![data viewer](dataframe.png)
+![environment](environmentpane.png)
+![console.png](rconsole.png)
 
 ## ⭐ Acknowledgement
 
